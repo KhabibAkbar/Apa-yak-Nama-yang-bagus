@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/reports', [ReportController::class, 'index'])->name('api.reports.index');
 Route::post('/reports', [ReportController::class, 'store'])->name('api.reports.store');
+Route::patch('/reports/{id}/status', [ReportController::class, 'updateStatus'])->name('api.reports.update-status');
 Route::patch('/reports/{id}/assign', [ReportController::class, 'assign'])->name('api.reports.assign');
 Route::get('/reports/{id}/work-logs', [ReportController::class, 'workLogs'])->name('api.reports.work-logs');
 Route::get('/reports/{id}', [ReportController::class, 'show'])->name('api.reports.show');

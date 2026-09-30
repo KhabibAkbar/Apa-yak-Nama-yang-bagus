@@ -69,6 +69,21 @@ class ReportController extends Controller
         );
     }
 
+    public function updateStatus(Request $request, string $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string', Rule::in(Report::STATUSES)],
+        ]);
+
+        $report = Report::find($id);
+        abort_if($report === null, 404, 'Report not found.');
+
+        $report->status = $validated['status'];
+        $report->save();
+
+        return response()->json($report->refresh());
+    }
+
     public function assign(Request $request, string $id): JsonResponse
     {
         $validated = $request->validate([

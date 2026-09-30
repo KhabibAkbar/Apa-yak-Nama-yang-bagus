@@ -19,7 +19,7 @@ Route::get('/reports/{report}', fn (string $report) => Inertia::render('Reports/
 ]))->name('reports.show');
 Route::get('/management', fn () => Inertia::render('Management/Index'))
     ->name('management.dashboard');
-Route::get('/management/reports', fn () => app(PageController::class)->show('Review reports'))
+Route::get('/management/reports', fn () => Inertia::render('Management/Reports/Index'))
     ->name('management.reports.index');
 Route::get('/management/reports/{report}', fn (string $report) => Inertia::render('Management/Reports/Show', [
     'reportId' => $report,
