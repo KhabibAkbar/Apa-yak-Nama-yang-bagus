@@ -120,7 +120,11 @@ export default function WorkerTaskList() {
                             </h1>
                         </div>
                         <a
-                            href="/worker"
+                            href={
+                                workerId
+                                    ? `/worker?worker_id=${encodeURIComponent(workerId)}`
+                                    : '/worker'
+                            }
                             className="text-sm font-medium text-blue-700 hover:underline"
                         >
                             Back to dashboard

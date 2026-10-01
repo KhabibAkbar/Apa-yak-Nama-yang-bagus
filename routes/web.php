@@ -33,7 +33,7 @@ Route::get('/management/reports/{report}', fn (string $report) => Inertia::rende
 ]))
     ->name('management.reports.show');
 
-Route::get('/worker', fn () => app(PageController::class)->show('Worker dashboard'))
+Route::get('/worker', fn () => Inertia::render('Worker/Index'))
     ->name('worker.dashboard');
 
 Route::get('/worker/tasks', fn () => Inertia::render('Worker/Tasks/Index'))

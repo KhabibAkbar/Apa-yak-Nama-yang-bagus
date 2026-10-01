@@ -266,13 +266,12 @@ export default function Welcome() {
                             </p>
                         </a>
                         <a
-                            href="/worker/tasks"
+                            href="/worker?worker_id=6abd685535b63a47a00a64b7"
                             className="rounded-xl border border-slate-200 bg-white p-5 hover:border-blue-300"
                         >
                             <h3 className="font-semibold">Worker tasks</h3>
                             <p className="mt-2 text-sm leading-6 text-slate-600">
-                                Open assigned tasks using a Worker ID in the
-                                prototype URL.
+                                Open Dimas Saputra’s assigned tasks in the demo.
                             </p>
                         </a>
                     </div>
