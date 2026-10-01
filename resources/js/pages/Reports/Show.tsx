@@ -39,17 +39,30 @@ type Report = {
     priority: ReportPriority;
     status: ReportStatus;
     createdAt: string;
+    assignedWorkerId?: string | null;
 };
 
-type Reporter = {
+type DemoUser = {
     id: string;
     name: string;
     role: string;
 };
 
+type WorkLog = {
+    id: string;
+    status: string;
+    note: string;
+    createdAt: string;
+    workerId?: string | null;
+    beforeImage?: string | null;
+    afterImage?: string | null;
+};
+
 type LoadedReport = {
     report: Report;
-    reporter: Reporter | null;
+    reporter: DemoUser | null;
+    assignedWorker: DemoUser | null;
+    users: DemoUser[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,16 +95,38 @@ function isReport(value: unknown): value is Report {
         typeof value.location === 'string' &&
         isReportPriority(value.priority) &&
         isReportStatus(value.status) &&
-        typeof value.createdAt === 'string'
+        typeof value.createdAt === 'string' &&
+        (typeof value.assignedWorkerId === 'string' ||
+            value.assignedWorkerId === null ||
+            value.assignedWorkerId === undefined)
     );
 }
 
-function isReporter(value: unknown): value is Reporter {
+function isDemoUser(value: unknown): value is DemoUser {
     return (
         isRecord(value) &&
         typeof value.id === 'string' &&
         typeof value.name === 'string' &&
         typeof value.role === 'string'
+    );
+}
+
+function isWorkLog(value: unknown): value is WorkLog {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        typeof value.status === 'string' &&
+        typeof value.note === 'string' &&
+        typeof value.createdAt === 'string' &&
+        (typeof value.workerId === 'string' ||
+            value.workerId === null ||
+            value.workerId === undefined) &&
+        (typeof value.beforeImage === 'string' ||
+            value.beforeImage === null ||
+            value.beforeImage === undefined) &&
+        (typeof value.afterImage === 'string' ||
+            value.afterImage === null ||
+            value.afterImage === undefined)
     );
 }
 
@@ -101,6 +136,19 @@ async function readJson(response: Response): Promise<unknown> {
     } catch {
         return null;
     }
+}
+
+function proofSource(reference: string): string | null {
+    if (/^https?:\/\//i.test(reference)) return reference;
+    if (reference.startsWith('report-proofs/')) return `/storage/${reference}`;
+    return null;
+}
+
+function formatTimestamp(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+        ? 'Time unavailable'
+        : date.toLocaleString();
 }
 
 const statusClasses: Record<ReportStatus, string> = {
@@ -131,6 +179,9 @@ const priorityClasses = {
 
 export default function ShowReport({ reportId }: Props) {
     const [loaded, setLoaded] = useState<LoadedReport | null>(null);
+    const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
+    const [workLogsLoading, setWorkLogsLoading] = useState(true);
+    const [workLogsError, setWorkLogsError] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [reloadKey, setReloadKey] = useState(0);
@@ -140,7 +191,9 @@ export default function ShowReport({ reportId }: Props) {
 
         async function loadReport() {
             setLoading(true);
+            setWorkLogsLoading(true);
             setError('');
+            setWorkLogsError('');
 
             try {
                 const [reportResponse, usersResponse] = await Promise.all([
@@ -171,16 +224,54 @@ export default function ShowReport({ reportId }: Props) {
                 }
 
                 const users: unknown[] = usersPayload;
+                const demoUsers = users.filter(isDemoUser);
                 const reporter = users.find(
-                    (user): user is Reporter =>
-                        isReporter(user) &&
+                    (user): user is DemoUser =>
+                        isDemoUser(user) &&
                         user.id === reportPayload.reporterId,
+                );
+                const assignedWorker = users.find(
+                    (user): user is DemoUser =>
+                        isDemoUser(user) &&
+                        user.id === reportPayload.assignedWorkerId,
                 );
 
                 setLoaded({
                     report: reportPayload,
                     reporter: reporter ?? null,
+                    assignedWorker: assignedWorker ?? null,
+                    users: demoUsers,
                 });
+                setLoading(false);
+
+                try {
+                    const workLogsResponse = await fetch(
+                        `/api/reports/${encodeURIComponent(reportId)}/work-logs`,
+                        {
+                            headers: { Accept: 'application/json' },
+                            signal: controller.signal,
+                        },
+                    );
+                    const workLogsPayload: unknown =
+                        await readJson(workLogsResponse);
+                    if (
+                        workLogsResponse.ok &&
+                        Array.isArray(workLogsPayload) &&
+                        workLogsPayload.every(isWorkLog)
+                    ) {
+                        setWorkLogs(workLogsPayload);
+                    } else {
+                        setWorkLogsError(
+                            'Could not load this report’s work history.',
+                        );
+                    }
+                } catch {
+                    if (!controller.signal.aborted) {
+                        setWorkLogsError(
+                            'Could not load this report’s work history.',
+                        );
+                    }
+                }
             } catch (loadError) {
                 if (!controller.signal.aborted) {
                     setError(
@@ -192,6 +283,7 @@ export default function ShowReport({ reportId }: Props) {
             } finally {
                 if (!controller.signal.aborted) {
                     setLoading(false);
+                    setWorkLogsLoading(false);
                 }
             }
         }
@@ -224,20 +316,20 @@ export default function ShowReport({ reportId }: Props) {
                             CampusFix
                         </a>
                         <a
-                            href="/reports/create"
+                            href="/reports"
                             className="text-sm font-semibold text-blue-700 hover:text-blue-900"
                         >
-                            Create a report
+                            My reports
                         </a>
                     </div>
                 </header>
 
                 <div className="mx-auto max-w-3xl px-5 py-8 sm:px-8 sm:py-12">
                     <a
-                        href="/reports/create"
+                        href="/reports"
                         className="text-sm font-medium text-blue-700 hover:text-blue-900"
                     >
-                        ← Submit another report
+                        ← Back to my reports
                     </a>
 
                     {loading && (
@@ -292,6 +384,13 @@ export default function ShowReport({ reportId }: Props) {
                                         'Civitas reporter'}{' '}
                                     · {createdLabel}
                                 </p>
+                                <p className="mt-2 text-sm text-slate-600">
+                                    Assigned worker:{' '}
+                                    {loaded.assignedWorker?.name ??
+                                        (report.assignedWorkerId
+                                            ? 'Worker details unavailable'
+                                            : 'Not assigned')}
+                                </p>
                             </div>
 
                             <div className="grid gap-6 px-6 py-6 sm:grid-cols-2 sm:px-9">
@@ -338,6 +437,120 @@ export default function ShowReport({ reportId }: Props) {
                                 {report.reportCode}
                             </div>
                         </article>
+                    )}
+
+                    {!loading && !error && report && (
+                        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-9">
+                            <h2 className="text-lg font-semibold">
+                                Progress history
+                            </h2>
+                            {workLogsLoading && (
+                                <p
+                                    className="mt-4 text-sm text-slate-600"
+                                    role="status"
+                                >
+                                    Loading work history…
+                                </p>
+                            )}
+                            {!workLogsLoading && workLogsError && (
+                                <p
+                                    className="mt-4 text-sm text-red-700"
+                                    role="alert"
+                                >
+                                    {workLogsError}
+                                </p>
+                            )}
+                            {!workLogsLoading &&
+                                !workLogsError &&
+                                workLogs.length === 0 && (
+                                    <p className="mt-4 text-sm text-slate-500">
+                                        No work history has been recorded yet.
+                                    </p>
+                                )}
+                            {!workLogsLoading &&
+                                !workLogsError &&
+                                workLogs.length > 0 && (
+                                    <ol className="mt-4 divide-y divide-slate-100">
+                                        {workLogs.map((log) => {
+                                            const worker = loaded.users.find(
+                                                (user) =>
+                                                    user.id === log.workerId,
+                                            );
+                                            return (
+                                                <li
+                                                    key={log.id}
+                                                    className="py-4 first:pt-0 last:pb-0"
+                                                >
+                                                    <p className="font-medium capitalize">
+                                                        {log.status.replaceAll(
+                                                            '_',
+                                                            ' ',
+                                                        )}
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-slate-700">
+                                                        {log.note}
+                                                    </p>
+                                                    <p className="mt-2 text-xs text-slate-500">
+                                                        Worker:{' '}
+                                                        {worker?.name ??
+                                                            log.workerId ??
+                                                            'Not available'}
+                                                    </p>
+                                                    <time
+                                                        className="mt-1 block text-xs text-slate-500"
+                                                        dateTime={log.createdAt}
+                                                    >
+                                                        {formatTimestamp(
+                                                            log.createdAt,
+                                                        )}
+                                                    </time>
+                                                    {(
+                                                        [
+                                                            [
+                                                                'Before work',
+                                                                log.beforeImage,
+                                                            ],
+                                                            [
+                                                                'Work proof',
+                                                                log.afterImage,
+                                                            ],
+                                                        ] as const
+                                                    ).map(
+                                                        ([
+                                                            label,
+                                                            reference,
+                                                        ]) => {
+                                                            if (!reference)
+                                                                return null;
+                                                            const source =
+                                                                proofSource(
+                                                                    reference,
+                                                                );
+                                                            return source ? (
+                                                                <img
+                                                                    key={label}
+                                                                    src={source}
+                                                                    alt={label}
+                                                                    className="mt-3 max-h-64 rounded-lg border border-slate-200 object-contain"
+                                                                />
+                                                            ) : (
+                                                                <p
+                                                                    key={label}
+                                                                    className="mt-2 text-xs text-slate-500"
+                                                                >
+                                                                    {label}{' '}
+                                                                    reference:{' '}
+                                                                    {reference}
+                                                                </p>
+                                                            );
+                                                        },
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ol>
+                                )}
+                        </section>
                     )}
                 </div>
             </main>
