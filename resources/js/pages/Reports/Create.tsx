@@ -14,13 +14,7 @@ const priorities = ['low', 'medium', 'high'] as const;
 
 type Category = (typeof categories)[number];
 type Priority = (typeof priorities)[number];
-type FormField =
-    | 'title'
-    | 'description'
-    | 'category'
-    | 'location'
-    | 'priority'
-    | 'image';
+type FormField = 'title' | 'description' | 'category' | 'location' | 'priority';
 
 type FormValues = {
     title: string;
@@ -28,7 +22,6 @@ type FormValues = {
     category: Category | '';
     location: string;
     priority: Priority;
-    image: string;
 };
 
 type DemoUser = {
@@ -43,7 +36,6 @@ const initialForm: FormValues = {
     category: '',
     location: '',
     priority: 'medium',
-    image: '',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -80,7 +72,6 @@ function validationMessages(
         'category',
         'location',
         'priority',
-        'image',
     ];
     const messages: Partial<Record<FormField, string>> = {};
 
@@ -197,7 +188,6 @@ export default function CreateReport() {
                     category: form.category,
                     location: form.location.trim(),
                     priority: form.priority,
-                    image: form.image.trim() || null,
                 }),
             });
             const payload: unknown = await readJson(response);
@@ -484,41 +474,6 @@ export default function CreateReport() {
                                 {fieldErrors.location && (
                                     <p className="mt-1 text-sm text-red-700">
                                         {fieldErrors.location}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label
-                                    className={labelClassName}
-                                    htmlFor="image"
-                                >
-                                    Image placeholder{' '}
-                                    <span className="font-normal text-slate-500">
-                                        (optional)
-                                    </span>
-                                </label>
-                                <input
-                                    id="image"
-                                    className={inputClassName}
-                                    value={form.image}
-                                    onChange={(event) =>
-                                        setForm((current) => ({
-                                            ...current,
-                                            image: event.target.value,
-                                        }))
-                                    }
-                                    maxLength={2048}
-                                    placeholder="placeholders/report-image.svg"
-                                    aria-invalid={Boolean(fieldErrors.image)}
-                                />
-                                <p className="mt-1 text-xs text-slate-500">
-                                    Enter a local placeholder path. File uploads
-                                    are not enabled yet.
-                                </p>
-                                {fieldErrors.image && (
-                                    <p className="mt-1 text-sm text-red-700">
-                                        {fieldErrors.image}
                                     </p>
                                 )}
                             </div>
