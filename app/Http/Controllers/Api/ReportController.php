@@ -239,16 +239,33 @@ class ReportController extends Controller
             'category' => ['required', Rule::in(Report::CATEGORIES)],
             'location' => ['required', 'string', 'max:160'],
             'priority' => ['required', Rule::in(Report::PRIORITIES)],
-            'image' => ['nullable', 'string', 'max:2048'],
+            'image' => ['sometimes', 'nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
         abort_unless(User::whereKey($validated['reporterId'])->exists(), 422, 'Reporter not found.');
 
-        $report = Report::create([
-            ...$validated,
-            'reportCode' => 'CF-'.Str::upper(Str::random(6)),
-            'status' => 'reported',
-        ]);
+        $image = $validated['image'] ?? null;
+        unset($validated['image']);
+
+        $imagePath = $image?->store('reports', 'public');
+        if ($image !== null && $imagePath === false) {
+            return response()->json(['message' => 'The report photo could not be stored.'], 500);
+        }
+
+        try {
+            $report = Report::create([
+                ...$validated,
+                'reportCode' => 'CF-'.Str::upper(Str::random(6)),
+                'status' => 'reported',
+                'image' => $imagePath,
+            ]);
+        } catch (\Throwable $exception) {
+            if (is_string($imagePath)) {
+                Storage::disk('public')->delete($imagePath);
+            }
+
+            throw $exception;
+        }
 
         return response()->json($report, 201);
     }

@@ -26,6 +26,7 @@ type Report = {
     priority: string;
     status: ReportStatus;
     description: string;
+    image?: string | null;
     assignedWorkerId?: string | null;
 };
 
@@ -59,6 +60,9 @@ function isReport(value: unknown): value is Report {
         typeof value.status === 'string' &&
         reportStatuses.includes(value.status as ReportStatus) &&
         typeof value.description === 'string' &&
+        (typeof value.image === 'string' ||
+            value.image === null ||
+            value.image === undefined) &&
         (typeof value.assignedWorkerId === 'string' ||
             value.assignedWorkerId === null ||
             value.assignedWorkerId === undefined)
@@ -101,6 +105,21 @@ function messageFrom(payload: unknown, fallback: string): string {
         : fallback;
 }
 
+function reportPhotoSource(reference: string): string {
+    if (
+        /^https?:\/\//i.test(reference) ||
+        reference.startsWith('/storage/')
+    ) {
+        return reference;
+    }
+
+    return `/storage/${reference
+        .replace(/^\/+/, '')
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`;
+}
+
 export default function Show({ reportId }: Props) {
     const [report, setReport] = useState<Report | null>(null);
     const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
@@ -111,12 +130,14 @@ export default function Show({ reportId }: Props) {
     const [assigning, setAssigning] = useState(false);
     const [assignmentMessage, setAssignmentMessage] = useState('');
     const [assignmentError, setAssignmentError] = useState('');
-    const [selectedStatus, setSelectedStatus] = useState<ReportStatus | ''>('');
+    const [selectedStatus, setSelectedStatus] =
+        useState<ReportStatus | ''>('');
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [statusMessage, setStatusMessage] = useState('');
     const [statusError, setStatusError] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [photoLoadError, setPhotoLoadError] = useState(false);
 
     const workersById = useMemo(
         () => new Map(workers.map((worker) => [worker.id, worker])),
@@ -126,6 +147,10 @@ export default function Show({ reportId }: Props) {
     useEffect(() => {
         if (report) setSelectedStatus(report.status);
     }, [report?.status]);
+
+    useEffect(() => {
+        setPhotoLoadError(false);
+    }, [report?.image]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -146,6 +171,7 @@ export default function Show({ reportId }: Props) {
                         signal: controller.signal,
                     }),
                 ]);
+
                 const [reportPayload, logsPayload] = await Promise.all([
                     readJson(reportResponse),
                     readJson(logsResponse),
@@ -189,6 +215,7 @@ export default function Show({ reportId }: Props) {
         }
 
         void loadReport();
+
         return () => controller.abort();
     }, [reportId]);
 
@@ -198,12 +225,15 @@ export default function Show({ reportId }: Props) {
         async function loadWorkers() {
             setWorkersLoading(true);
             setWorkersError('');
+
             try {
                 const response = await fetch('/api/workers', {
                     headers: { Accept: 'application/json' },
                     signal: controller.signal,
                 });
+
                 const payload = await readJson(response);
+
                 if (
                     !response.ok ||
                     !Array.isArray(payload) ||
@@ -216,6 +246,7 @@ export default function Show({ reportId }: Props) {
                         ),
                     );
                 }
+
                 setWorkers(payload);
             } catch (loadError) {
                 if (!controller.signal.aborted) {
@@ -231,11 +262,13 @@ export default function Show({ reportId }: Props) {
         }
 
         void loadWorkers();
+
         return () => controller.abort();
     }, []);
 
     async function assignWorker(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+
         if (!report || !selectedWorkerId || assigning) return;
 
         setAssigning(true);
@@ -254,7 +287,9 @@ export default function Show({ reportId }: Props) {
                     body: JSON.stringify({ workerId: selectedWorkerId }),
                 },
             );
+
             const payload = await readJson(response);
+
             if (!response.ok || !isReport(payload)) {
                 throw new Error(
                     messageFrom(payload, 'Could not assign the worker.'),
@@ -262,16 +297,26 @@ export default function Show({ reportId }: Props) {
             }
 
             setReport(payload);
-            setSelectedWorkerId(payload.assignedWorkerId ?? selectedWorkerId);
+
+            setSelectedWorkerId(
+                payload.assignedWorkerId ?? selectedWorkerId,
+            );
+
             setAssignmentMessage(
-                `Assigned to ${workersById.get(selectedWorkerId)?.name ?? 'worker'}.`,
+                `Assigned to ${
+                    workersById.get(selectedWorkerId)?.name ?? 'worker'
+                }.`,
             );
 
             const logsResponse = await fetch(
                 `/api/reports/${encodeURIComponent(reportId)}/work-logs`,
-                { headers: { Accept: 'application/json' } },
+                {
+                    headers: { Accept: 'application/json' },
+                },
             );
+
             const logsPayload = await readJson(logsResponse);
+
             if (
                 !logsResponse.ok ||
                 !Array.isArray(logsPayload) ||
@@ -299,6 +344,7 @@ export default function Show({ reportId }: Props) {
 
     async function updateStatus(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+
         if (!report || !selectedStatus || updatingStatus) return;
 
         setUpdatingStatus(true);
@@ -317,7 +363,9 @@ export default function Show({ reportId }: Props) {
                     body: JSON.stringify({ status: selectedStatus }),
                 },
             );
+
             const payload = await readJson(response);
+
             if (!response.ok || !isReport(payload)) {
                 throw new Error(
                     messageFrom(payload, 'Could not update report status.'),
@@ -330,9 +378,13 @@ export default function Show({ reportId }: Props) {
             try {
                 const logsResponse = await fetch(
                     `/api/reports/${encodeURIComponent(reportId)}/work-logs`,
-                    { headers: { Accept: 'application/json' } },
+                    {
+                        headers: { Accept: 'application/json' },
+                    },
                 );
+
                 const logsPayload = await readJson(logsResponse);
+
                 if (
                     !logsResponse.ok ||
                     !Array.isArray(logsPayload) ||
@@ -345,6 +397,7 @@ export default function Show({ reportId }: Props) {
                         ),
                     );
                 }
+
                 setWorkLogs(logsPayload);
             } catch (refreshError) {
                 setStatusError(
@@ -367,6 +420,7 @@ export default function Show({ reportId }: Props) {
     return (
         <>
             <Head title={report?.reportCode ?? 'Report details'} />
+
             <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-900">
                 <div className="mx-auto max-w-3xl">
                     <a
@@ -400,9 +454,11 @@ export default function Show({ reportId }: Props) {
                                 <p className="text-sm font-semibold text-blue-700">
                                     {report.reportCode}
                                 </p>
+
                                 <h1 className="mt-2 text-2xl font-semibold">
                                     {report.title}
                                 </h1>
+
                                 <dl className="mt-5 grid gap-4 sm:grid-cols-2">
                                     <div>
                                         <dt className="text-sm text-slate-500">
@@ -412,6 +468,7 @@ export default function Show({ reportId }: Props) {
                                             {report.category}
                                         </dd>
                                     </div>
+
                                     <div>
                                         <dt className="text-sm text-slate-500">
                                             Location
@@ -420,6 +477,7 @@ export default function Show({ reportId }: Props) {
                                             {report.location}
                                         </dd>
                                     </div>
+
                                     <div>
                                         <dt className="text-sm text-slate-500">
                                             Priority
@@ -428,19 +486,25 @@ export default function Show({ reportId }: Props) {
                                             {report.priority}
                                         </dd>
                                     </div>
+
                                     <div>
                                         <dt className="text-sm text-slate-500">
                                             Status
                                         </dt>
                                         <dd className="mt-1 font-medium">
-                                            {report.status.replaceAll('_', ' ')}
+                                            {report.status.replaceAll(
+                                                '_',
+                                                ' ',
+                                            )}
                                         </dd>
                                     </div>
                                 </dl>
+
                                 <div className="mt-5 border-t border-slate-100 pt-4">
                                     <h2 className="text-sm font-medium text-slate-500">
                                         Description
                                     </h2>
+
                                     <p className="mt-2 text-sm leading-6 whitespace-pre-wrap">
                                         {report.description}
                                     </p>
@@ -448,9 +512,33 @@ export default function Show({ reportId }: Props) {
                             </section>
 
                             <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                                <h2 className="text-sm font-medium text-slate-500">
+                                    Report photo
+                                </h2>
+
+                                {report.image && !photoLoadError ? (
+                                    <img
+                                        src={reportPhotoSource(report.image)}
+                                        alt={`Photo for ${report.title}`}
+                                        className="mt-3 max-h-96 w-full rounded-lg border border-slate-200 object-contain"
+                                        onError={() =>
+                                            setPhotoLoadError(true)
+                                        }
+                                    />
+                                ) : (
+                                    <p className="mt-3 text-sm text-slate-500">
+                                        {report.image
+                                            ? 'Photo is unavailable.'
+                                            : 'No photo provided.'}
+                                    </p>
+                                )}
+                            </section>
+
+                            <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                                 <h2 className="text-lg font-semibold">
                                     Update Status
                                 </h2>
+
                                 <form
                                     className="mt-4 flex flex-col gap-3 sm:flex-row"
                                     onSubmit={updateStatus}
@@ -461,6 +549,7 @@ export default function Show({ reportId }: Props) {
                                     >
                                         Select report status
                                     </label>
+
                                     <select
                                         id="reportStatus"
                                         className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -474,11 +563,15 @@ export default function Show({ reportId }: Props) {
                                         required
                                     >
                                         {reportStatuses.map((status) => (
-                                            <option key={status} value={status}>
+                                            <option
+                                                key={status}
+                                                value={status}
+                                            >
                                                 {status.replaceAll('_', ' ')}
                                             </option>
                                         ))}
                                     </select>
+
                                     <button
                                         type="submit"
                                         disabled={
@@ -491,6 +584,7 @@ export default function Show({ reportId }: Props) {
                                             : 'Update Status'}
                                     </button>
                                 </form>
+
                                 {statusMessage && (
                                     <p
                                         className="mt-3 text-sm text-emerald-700"
@@ -499,6 +593,7 @@ export default function Show({ reportId }: Props) {
                                         {statusMessage}
                                     </p>
                                 )}
+
                                 {statusError && (
                                     <p
                                         className="mt-3 text-sm text-red-700"
@@ -513,6 +608,7 @@ export default function Show({ reportId }: Props) {
                                 <h2 className="text-lg font-semibold">
                                     Assign Worker
                                 </h2>
+
                                 {report.assignedWorkerId && (
                                     <p className="mt-2 text-sm text-slate-600">
                                         Currently assigned:{' '}
@@ -551,6 +647,7 @@ export default function Show({ reportId }: Props) {
                                         >
                                             Select worker
                                         </label>
+
                                         <select
                                             id="workerId"
                                             className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -565,6 +662,7 @@ export default function Show({ reportId }: Props) {
                                             <option value="" disabled>
                                                 Select a worker
                                             </option>
+
                                             {workers.map((worker) => (
                                                 <option
                                                     key={worker.id}
@@ -577,6 +675,7 @@ export default function Show({ reportId }: Props) {
                                                 </option>
                                             ))}
                                         </select>
+
                                         <button
                                             type="submit"
                                             disabled={
@@ -592,6 +691,7 @@ export default function Show({ reportId }: Props) {
                                         </button>
                                     </form>
                                 )}
+
                                 {assignmentMessage && (
                                     <p
                                         className="mt-3 text-sm text-emerald-700"
@@ -600,6 +700,7 @@ export default function Show({ reportId }: Props) {
                                         {assignmentMessage}
                                     </p>
                                 )}
+
                                 {assignmentError && (
                                     <p
                                         className="mt-3 text-sm text-red-700"
@@ -614,6 +715,7 @@ export default function Show({ reportId }: Props) {
                                 <h2 className="text-lg font-semibold">
                                     Work logs
                                 </h2>
+
                                 {workLogs.length === 0 ? (
                                     <p className="mt-4 text-sm text-slate-500">
                                         No work logs found.
@@ -631,9 +733,11 @@ export default function Show({ reportId }: Props) {
                                                         ' ',
                                                     )}
                                                 </p>
+
                                                 <p className="mt-1 text-sm text-slate-700">
                                                     {log.note}
                                                 </p>
+
                                                 <time className="mt-2 block text-xs text-slate-500">
                                                     {new Date(
                                                         log.createdAt,

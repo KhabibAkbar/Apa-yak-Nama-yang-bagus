@@ -1,5 +1,5 @@
 import { Head } from '@inertiajs/react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 const categories = [
     'Electrical',
@@ -14,7 +14,13 @@ const priorities = ['low', 'medium', 'high'] as const;
 
 type Category = (typeof categories)[number];
 type Priority = (typeof priorities)[number];
-type FormField = 'title' | 'description' | 'category' | 'location' | 'priority';
+type FormField =
+    | 'title'
+    | 'description'
+    | 'category'
+    | 'location'
+    | 'priority'
+    | 'image';
 
 type FormValues = {
     title: string;
@@ -72,6 +78,7 @@ function validationMessages(
         'category',
         'location',
         'priority',
+        'image',
     ];
     const messages: Partial<Record<FormField, string>> = {};
 
@@ -100,6 +107,8 @@ const labelClassName = 'text-sm font-medium text-slate-800';
 
 export default function CreateReport() {
     const [form, setForm] = useState<FormValues>(initialForm);
+    const [photo, setPhoto] = useState<File | null>(null);
+    const photoInputRef = useRef<HTMLInputElement>(null);
     const [reporter, setReporter] = useState<DemoUser | null>(null);
     const [loadingReporter, setLoadingReporter] = useState(true);
     const [reporterError, setReporterError] = useState('');
@@ -175,20 +184,23 @@ export default function CreateReport() {
         setFieldErrors({});
 
         try {
+            const formData = new FormData();
+            formData.append('reporterId', reporter.id);
+            formData.append('title', form.title.trim());
+            formData.append('description', form.description.trim());
+            formData.append('category', form.category);
+            formData.append('location', form.location.trim());
+            formData.append('priority', form.priority);
+            if (photo) {
+                formData.append('image', photo);
+            }
+
             const response = await fetch('/api/reports', {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
-                    'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    reporterId: reporter.id,
-                    title: form.title.trim(),
-                    description: form.description.trim(),
-                    category: form.category,
-                    location: form.location.trim(),
-                    priority: form.priority,
-                }),
+                body: formData,
             });
             const payload: unknown = await readJson(response);
 
@@ -474,6 +486,60 @@ export default function CreateReport() {
                                 {fieldErrors.location && (
                                     <p className="mt-1 text-sm text-red-700">
                                         {fieldErrors.location}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label
+                                    className={labelClassName}
+                                    htmlFor="image"
+                                >
+                                    Condition photos{' '}
+                                    <span className="font-normal text-slate-500">
+                                        (Optional)
+                                    </span>
+                                </label>
+                                <input
+                                    ref={photoInputRef}
+                                    id="image"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                    className={inputClassName}
+                                    onChange={(event) => {
+                                        setPhoto(
+                                            event.target.files?.[0] ?? null,
+                                        );
+                                        setFieldErrors((current) => ({
+                                            ...current,
+                                            image: undefined,
+                                        }));
+                                    }}
+                                    aria-invalid={Boolean(fieldErrors.image)}
+                                />
+                                {photo && (
+                                    <div className="mt-2 flex items-center justify-between gap-3 text-sm text-slate-600">
+                                        <span className="truncate">
+                                            {photo.name}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="shrink-0 font-medium text-blue-700 hover:underline"
+                                            onClick={() => {
+                                                setPhoto(null);
+                                                if (photoInputRef.current) {
+                                                    photoInputRef.current.value =
+                                                        '';
+                                                }
+                                            }}
+                                        >
+                                            Hapus foto
+                                        </button>
+                                    </div>
+                                )}
+                                {fieldErrors.image && (
+                                    <p className="mt-1 text-sm text-red-700">
+                                        {fieldErrors.image}
                                     </p>
                                 )}
                             </div>

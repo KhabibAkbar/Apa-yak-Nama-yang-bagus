@@ -6,6 +6,8 @@ use App\Models\Report;
 use App\Models\User;
 use App\Models\WorkLog;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -18,6 +20,7 @@ class CivitasReportWorkflowTest extends TestCase
         config(['database.default' => 'mongodb']);
         DB::setDefaultConnection('mongodb');
         DB::purge('mongodb');
+        Storage::fake('public');
     }
 
     public function test_valid_civitas_report_can_be_created_with_reported_status(): void
@@ -33,7 +36,6 @@ class CivitasReportWorkflowTest extends TestCase
                 'category' => 'Other',
                 'location' => 'Civitas workflow test fixture',
                 'priority' => 'low',
-                'image' => null,
             ]);
 
             $response->assertCreated()
@@ -45,6 +47,68 @@ class CivitasReportWorkflowTest extends TestCase
             $this->assertMatchesRegularExpression('/^CF-[A-Z0-9]{6}$/', $response->json('reportCode'));
 
             $this->assertSame('reported', Report::find($reportId)?->status);
+            $this->assertNull(Report::find($reportId)?->image);
+            $response->assertJsonPath('image', null);
+        } finally {
+            Report::where('title', $title)->delete();
+            User::whereKey($reporter->getKey())->delete();
+        }
+    }
+
+    public function test_civitas_report_can_be_created_with_an_optional_photo(): void
+    {
+        $reporter = $this->createCivitas();
+        $title = 'Temporary Civitas photo report '.Str::random(12);
+        $imagePath = null;
+
+        try {
+            $response = $this->post('/api/reports', [
+                'reporterId' => (string) $reporter->getKey(),
+                'title' => $title,
+                'description' => 'Temporary photo upload fixture.',
+                'category' => 'Other',
+                'location' => 'Civitas photo test fixture',
+                'priority' => 'low',
+                'image' => UploadedFile::fake()->image('campus-condition.jpg'),
+            ], ['Accept' => 'application/json']);
+
+            $response->assertCreated()->assertJsonPath('status', 'reported');
+            $imagePath = $response->json('image');
+            $this->assertIsString($imagePath);
+            $this->assertStringStartsWith('reports/', $imagePath);
+            Storage::disk('public')->assertExists($imagePath);
+            $this->assertSame($imagePath, Report::find($response->json('id'))?->image);
+
+            $this->getJson('/api/reports/'.$response->json('id'))
+                ->assertOk()
+                ->assertJsonPath('image', $imagePath);
+        } finally {
+            if (is_string($imagePath)) {
+                Storage::disk('public')->delete($imagePath);
+            }
+            Report::where('title', $title)->delete();
+            User::whereKey($reporter->getKey())->delete();
+        }
+    }
+
+    public function test_non_image_file_is_rejected_for_civitas_report_photo(): void
+    {
+        $reporter = $this->createCivitas();
+        $title = 'Temporary Civitas invalid photo report '.Str::random(12);
+
+        try {
+            $this->post('/api/reports', [
+                'reporterId' => (string) $reporter->getKey(),
+                'title' => $title,
+                'description' => 'Temporary invalid photo fixture.',
+                'category' => 'Other',
+                'location' => 'Civitas invalid photo test fixture',
+                'priority' => 'low',
+                'image' => UploadedFile::fake()->create('notes.txt', 20, 'text/plain'),
+            ], ['Accept' => 'application/json'])->assertUnprocessable();
+
+            $this->assertNull(Report::where('title', $title)->first());
+            $this->assertSame([], Storage::disk('public')->allFiles('reports'));
         } finally {
             Report::where('title', $title)->delete();
             User::whereKey($reporter->getKey())->delete();

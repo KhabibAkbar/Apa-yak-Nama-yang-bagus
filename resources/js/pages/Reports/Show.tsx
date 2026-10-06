@@ -39,6 +39,7 @@ type Report = {
     priority: ReportPriority;
     status: ReportStatus;
     createdAt: string;
+    image?: string | null;
     assignedWorkerId?: string | null;
 };
 
@@ -96,6 +97,9 @@ function isReport(value: unknown): value is Report {
         isReportPriority(value.priority) &&
         isReportStatus(value.status) &&
         typeof value.createdAt === 'string' &&
+        (typeof value.image === 'string' ||
+            value.image === null ||
+            value.image === undefined) &&
         (typeof value.assignedWorkerId === 'string' ||
             value.assignedWorkerId === null ||
             value.assignedWorkerId === undefined)
@@ -144,6 +148,18 @@ function proofSource(reference: string): string | null {
     return null;
 }
 
+function reportPhotoSource(reference: string): string {
+    if (/^https?:\/\//i.test(reference) || reference.startsWith('/storage/')) {
+        return reference;
+    }
+
+    return `/storage/${reference
+        .replace(/^\/+/, '')
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`;
+}
+
 function formatTimestamp(value: string): string {
     const date = new Date(value);
     return Number.isNaN(date.getTime())
@@ -185,6 +201,7 @@ export default function ShowReport({ reportId }: Props) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [reloadKey, setReloadKey] = useState(0);
+    const [photoLoadError, setPhotoLoadError] = useState(false);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -294,6 +311,10 @@ export default function ShowReport({ reportId }: Props) {
     }, [reportId, reloadKey]);
 
     const report = loaded?.report;
+    useEffect(() => {
+        setPhotoLoadError(false);
+    }, [report?.image]);
+
     const createdDate = report ? new Date(report.createdAt) : null;
     const createdLabel =
         createdDate && !Number.isNaN(createdDate.getTime())
@@ -430,6 +451,26 @@ export default function ShowReport({ reportId }: Props) {
                                         </span>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="border-t border-slate-100 px-6 py-6 sm:px-9">
+                                <h2 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                                    Report photo
+                                </h2>
+                                {report.image && !photoLoadError ? (
+                                    <img
+                                        src={reportPhotoSource(report.image)}
+                                        alt={`Photo for ${report.title}`}
+                                        className="mt-3 max-h-80 rounded-lg border border-slate-200 object-contain"
+                                        onError={() => setPhotoLoadError(true)}
+                                    />
+                                ) : (
+                                    <p className="mt-2 text-sm text-slate-600">
+                                        {report.image
+                                            ? 'Photo is unavailable.'
+                                            : 'No photo provided.'}
+                                    </p>
+                                )}
                             </div>
 
                             <div className="border-t border-slate-100 bg-slate-50 px-6 py-4 text-xs text-slate-500 sm:px-9">
